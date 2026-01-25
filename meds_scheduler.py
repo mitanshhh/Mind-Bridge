@@ -159,6 +159,7 @@ if st.button("📅 Set Medicine Reminders",key='reminder_set_btn'):
         with st.spinner("Processing..."):
             raw = call_gemini(st.session_state.user_text)
             schedule = parse_json(raw)
+            st.write(schedule)
 
             if schedule:
                 create_calendar_events(schedule)
