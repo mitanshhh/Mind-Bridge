@@ -1,171 +1,142 @@
 import streamlit as st
-import json
-import google.generativeai as genai
-from datetime import datetime
-from googleapiclient.discovery import build
-import os 
+import datetime
+import dateparser
+import re
 from google_auth_oauthlib.flow import Flow
-from google.oauth2.credentials import Credentials
-from dotenv import load_dotenv
+from googleapiclient.discovery import build
+import os
 
-load_dotenv()
+# --- CONFIGURATION ---
+st.set_page_config(page_title="Auto Med Scheduler", page_icon="💊")
 
-# ---------------- CONFIG ----------------
-st.set_page_config(page_title="Medicine Tracker", layout="wide")
-TIMEZONE = "Asia/Kolkata"
-SCOPES = ["https://www.googleapis.com/auth/calendar"]
+# This must match the URI you set in Google Cloud Console exactly
+# If running locally, change to http://localhost:8501
+REDIRECT_URI = st.secrets["web"]["redirect_uris"][0] 
 
-# ---------------- GEMINI SETUP ----------------
-# Ensure you have GEMINI_API_KEY in .env or st.secrets
-genai.configure(api_key=os.getenv("GEMINI_API_KEY")) 
+SCOPES = ['https://www.googleapis.com/auth/calendar.events']
 
-model = genai.GenerativeModel(
-    model_name="gemini-2.0-flash", # Updated to latest flash model
-    generation_config={
-        "temperature": 0,
-        "response_mime_type": "application/json"
-    }
-)
-
-todays_date_user = datetime.now().strftime("%A, %d %B %Y")
-
-SYSTEM_PROMPT = f"""
-You are a medical scheduling assistant.
-Your job is to extract structured medicine reminders.
-Return ONLY valid JSON in the exact format below:
-{{
-  "medicines": [
-    {{
-      "name": "string",
-      "days": ["YYYY-MM-DD"],
-      "times": ["HH:MM"]
-    }}
-  ]
-}}
-Rules (must follow strictly):
-- Today is {todays_date_user}
-- If duration is mentioned (e.g. "for 3 days"), generate consecutive dates.
-- Convert weekdays into actual calendar dates starting from Today.
-- Convert all times to 24-hour format.
-- Return JSON only.
-"""
-
-# ---------------- OAUTH & CALENDAR FUNCTIONS ----------------
-
-def get_oauth_flow():
-    """Creates the OAuth flow object using secrets."""
-    # We construct the config dictionary from st.secrets to avoid needing a local file
-    client_config = {"web": st.secrets["web"]}
-    
-    flow = Flow.from_client_config(
-        client_config,
+# --- AUTHENTICATION FUNCTIONS ---
+def get_auth_flow():
+    """Constructs the OAuth Flow from Streamlit Secrets"""
+    return Flow.from_client_config(
+        client_config={"web": st.secrets["web"]},
         scopes=SCOPES,
-        redirect_uri=st.secrets["web"]["redirect_uris"][0]
+        redirect_uri=REDIRECT_URI
     )
-    return flow
 
 def authenticate_user():
-    """Handles the UI and logic for logging in."""
-    if "credentials" not in st.session_state:
-        st.session_state.credentials = None
+    """Handles the login logic"""
+    # 1. Check if we are already authenticated in this session
+    if "credentials" in st.session_state:
+        return st.session_state["credentials"]
 
-    # Check if we have an auth code in the URL (returning from Google)
-    if st.query_params.get("code"):
-        code = st.query_params.get("code")
-        flow = get_oauth_flow()
+    # 2. Check if the user just came back from Google Login (Auth Code in URL)
+    # st.query_params is the new way to handle URL parameters
+    code = st.query_params.get("code")
+    
+    if code:
         try:
+            flow = get_auth_flow()
             flow.fetch_token(code=code)
             creds = flow.credentials
-            st.session_state.credentials = creds.to_json()
-            # Clear the query params to hide the code
+            st.session_state["credentials"] = creds
+            # Clear the URL parameters to prevent re-using the code
             st.query_params.clear()
-            st.rerun()
+            return creds
         except Exception as e:
-            st.error(f"Authentication failed: {e}")
-
-    # If already logged in, return Credentials object
-    if st.session_state.credentials:
-        creds_dict = json.loads(st.session_state.credentials)
-        creds = Credentials.from_authorized_user_info(creds_dict, SCOPES)
-        return creds
-    
+            st.error(f"Login failed: {e}")
+            return None
+            
     return None
 
-def create_calendar_events(schedule, creds):
-    service = build("calendar", "v3", credentials=creds)
+# --- NATURAL LANGUAGE PARSER (Your "Brain") ---
+def parse_and_schedule(text, service):
+    """Parses text and inserts directly into Google Calendar"""
+    commands = re.split(r'\n| also ', text, flags=re.IGNORECASE)
+    results = []
 
-    count = 0
-    for med in schedule["medicines"]:
-        for day in med["days"]:
-            for time in med["times"]:
+    for cmd in commands:
+        if not cmd.strip(): continue
+        
+        # 1. Parse details
+        # (Simplified regex for demo - works for "Dolo 650 for 5 days at 4PM")
+        days_match = re.search(r'(?:for|next)\s+(\d+)\s+days?', cmd, re.IGNORECASE)
+        duration = int(days_match.group(1)) if days_match else 1
+        
+        # Extract times
+        time_matches = re.findall(r'(\d{1,2}(?::\d{2})?\s?(?:am|pm|AM|PM))', cmd)
+        parsed_times = [dateparser.parse(t).time() for t in time_matches]
+        if not parsed_times: parsed_times = [datetime.time(9, 0)] # Default 9AM
+
+        # Extract Name
+        clean_name = cmd.split(" at ")[0].split(" for ")[0].replace("Take", "").strip()
+
+        # 2. Loop and Insert into Calendar
+        today = datetime.datetime.now().date()
+        
+        for day_offset in range(duration):
+            target_date = today + datetime.timedelta(days=day_offset)
+            
+            for time_obj in parsed_times:
+                # Combine date + time
+                start_dt = datetime.datetime.combine(target_date, time_obj)
+                end_dt = start_dt + datetime.timedelta(minutes=30)
+                
                 event = {
-                    "summary": f"Take {med['name']}",
-                    "start": {
-                        "dateTime": f"{day}T{time}:00",
-                        "timeZone": TIMEZONE
+                    'summary': f'💊 Take {clean_name}',
+                    'description': f'Generated from command: {cmd}',
+                    'start': {
+                        'dateTime': start_dt.isoformat(),
+                        'timeZone': 'Asia/Kolkata', # Hardcoded for IST as requested
                     },
-                    "end": {
-                        "dateTime": f"{day}T{time}:30",
-                        "timeZone": TIMEZONE
+                    'end': {
+                        'dateTime': end_dt.isoformat(),
+                        'timeZone': 'Asia/Kolkata',
                     },
-                    "reminders": {
-                        "useDefault": False,
-                        "overrides": [{"method": "popup", "minutes": 10}]
-                    }
+                    'reminders': {
+                        'useDefault': False,
+                        'overrides': [
+                            {'method': 'popup', 'minutes': 10},
+                            {'method': 'popup', 'minutes': 0},
+                        ],
+                    },
                 }
-                service.events().insert(calendarId="primary", body=event).execute()
-                count += 1
-    return count
+                
+                # API CALL
+                created_event = service.events().insert(calendarId='primary', body=event).execute()
+                results.append(f"Set: {clean_name} on {target_date} at {time_obj}")
 
-# ---------------- GEMINI CALL ----------------
-def call_gemini(text):
-    response = model.generate_content(SYSTEM_PROMPT + "\n\nUser input:\n" + text)
-    return response.text
+    return results
 
-def parse_json(raw):
-    try:
-        return json.loads(raw)
-    except json.JSONDecodeError:
-        st.error("Gemini returned invalid JSON")
-        return None
+# --- UI LOGIC ---
+st.title("💊 Auto-Scheduler (Cloud Version)")
 
-# ---------------- UI ----------------
-st.title("💊 Medicine Reminder Tracker")
-
-# 1. AUTHENTICATION SECTION
 creds = authenticate_user()
 
 if not creds:
-    st.warning("Please log in to allow access to your Google Calendar.")
-    flow = get_oauth_flow()
+    st.warning("Please log in to allow this app to access your Calendar.")
+    flow = get_auth_flow()
     auth_url, _ = flow.authorization_url(prompt='consent')
-    st.markdown(f'<a href="{auth_url}" target="_self" style="padding:10px; background-color:#DB4437; color:white; text-decoration:none; border-radius:5px;">Login with Google</a>', unsafe_allow_html=True)
-    st.stop() # Stop execution here until logged in
+    
+    # Show the Login Button
+    st.link_button("🔐 Login with Google", auth_url)
 
-st.success("✅ Logged in to Google Calendar")
+else:
+    st.success("✅ Authenticated with Google!")
+    
+    # Initialize the API Service
+    service = build('calendar', 'v3', credentials=creds)
 
-st.write(
-    "### Enter medicine instructions\n"
-    "Example: *Take Dolo 650 for three days starting Monday at 3 PM.*"
-)
-
-user_text = st.text_area("Medicine Instructions", placeholder="Type here...")
-
-if st.button("📅 Set Medicine Reminders"):
-    if not user_text:
-        st.warning("Please provide instructions")
-    else:
-        with st.spinner("Processing with Gemini..."):
-            raw = call_gemini(user_text)
-            schedule = parse_json(raw)
-            
-            if schedule:
-                st.subheader("📋 Plan")
-                st.json(schedule)
-                
-                with st.spinner("Adding to Calendar..."):
-                    try:
-                        count = create_calendar_events(schedule, creds)
-                        st.success(f"✅ Successfully added {count} reminders to your personal calendar!")
-                    except Exception as e:
-                        st.error(f"Calendar Error: {e}")
+    st.subheader("Tell me your schedule")
+    user_input = st.text_area("Example: Take Dolo for 3 days at 2PM and 8PM")
+    
+    if st.button("🚀 Schedule It Automatically"):
+        if user_input:
+            with st.spinner("Talking to Google..."):
+                try:
+                    logs = parse_and_schedule(user_input, service)
+                    st.success("Done! Added the following to your calendar:")
+                    for log in logs:
+                        st.write(f"- {log}")
+                except Exception as e:
+                    st.error(f"An error occurred: {e}")
