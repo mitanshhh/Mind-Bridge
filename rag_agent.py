@@ -1,6 +1,7 @@
 from langchain_classic.chains import ConversationalRetrievalChain
 from langchain_classic.memory import ConversationBufferMemory
 from langchain_core.prompts import PromptTemplate
+from pathlib import Path
 from langchain_community.vectorstores import FAISS 
 from langchain_huggingface.embeddings import HuggingFaceEmbeddings
 from langchain_groq import ChatGroq
@@ -21,7 +22,10 @@ embeddings = HuggingFaceEmbeddings(
     )
 
 
-vectorstore = FAISS.load_local(r'Database\Mental_Health_DB',embeddings,allow_dangerous_deserialization=True)
+
+BASE_DIR = Path(__file__).resolve().parent
+DB_PATH = BASE_DIR / "Database" / "Mental_Health_DB"
+vectorstore = FAISS.load_local(DB_PATH,embeddings,allow_dangerous_deserialization=True)
 
 
 therapist_template = """   
