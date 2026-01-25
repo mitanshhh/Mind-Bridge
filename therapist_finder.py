@@ -50,9 +50,8 @@ def get_coordinates(address):
     return None, None
 
 def find_nearby_therapists(address,lat, lon, radius_meters=5000):
-    if not os.getenv('GEMINI_API_KEY'):
-        st.markdown("Set your Google Gemini API key in Settings")
-    else:
+    try:
+
         client = genai.Client(
             api_key=os.getenv("GEMINI_API_KEY"),
         )
@@ -135,7 +134,11 @@ def find_nearby_therapists(address,lat, lon, radius_meters=5000):
             if chunk.text:
                 output_chunk += chunk.text
 
-        return output_chunk    
+        return output_chunk
+    except Exception as e:
+        st.markdown("Set your Google Gemini API key in Settings")
+        print(e)
+
 
 
 
