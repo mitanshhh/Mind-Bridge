@@ -4,29 +4,11 @@ import google.generativeai as genai
 from datetime import datetime
 from googleapiclient.discovery import build
 import os 
-from google.oauth2.service_account import Credentials
+from google_auth_oauthlib.flow import Flow
+from google.oauth2.credentials import Credentials
 from dotenv import load_dotenv
 
 load_dotenv()
-SCOPES = ["https://www.googleapis.com/auth/calendar"]
-
-st.markdown("""
-<style>
-.st-c3 {
-    min-height: 16.25rem;
-}     
-
-#medicine-reminder-tracker{
-    justify-content: center;
-    display: flex;
-    position: relative;
-    bottom: 47px;}            
-</style<>
-
-""",unsafe_allow_html=True)
-
-if "user_text" not in st.session_state:
-    st.session_state.user_text = ""
 
 # ---------------- CONFIG ----------------
 st.set_page_config(page_title="Medicine Tracker", layout="wide")
@@ -34,10 +16,11 @@ TIMEZONE = "Asia/Kolkata"
 SCOPES = ["https://www.googleapis.com/auth/calendar"]
 
 # ---------------- GEMINI SETUP ----------------
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+# Ensure you have GEMINI_API_KEY in .env or st.secrets
+genai.configure(api_key=os.getenv("GEMINI_API_KEY")) 
 
 model = genai.GenerativeModel(
-    model_name="gemini-2.5-flash",
+    model_name="gemini-2.0-flash", # Updated to latest flash model
     generation_config={
         "temperature": 0,
         "response_mime_type": "application/json"
@@ -46,14 +29,10 @@ model = genai.GenerativeModel(
 
 todays_date_user = datetime.now().strftime("%A, %d %B %Y")
 
-
 SYSTEM_PROMPT = f"""
 You are a medical scheduling assistant.
-
 Your job is to extract structured medicine reminders.
-
 Return ONLY valid JSON in the exact format below:
-
 {{
   "medicines": [
     {{
@@ -63,31 +42,59 @@ Return ONLY valid JSON in the exact format below:
     }}
   ]
 }}
-
 Rules (must follow strictly):
 - Today is {todays_date_user}
-- If duration is mentioned (e.g. "for 3 days"), generate consecutive dates starting from the start date
-- Convert weekdays (Mon, Tue, etc.) into actual calendar dates starting from Today
-- Expand all date ranges into explicit individual dates
-- Convert all times to 24-hour format
-- If multiple times per day are mentioned, include all of them
-- Do NOT guess missing medicines, dates, or times
-- If information is missing, infer only what is logically implied by the rules above
-- Return JSON only, no text, no markdown, no explanation
-
+- If duration is mentioned (e.g. "for 3 days"), generate consecutive dates.
+- Convert weekdays into actual calendar dates starting from Today.
+- Convert all times to 24-hour format.
+- Return JSON only.
 """
 
+# ---------------- OAUTH & CALENDAR FUNCTIONS ----------------
 
-# ---------------- GOOGLE CALENDAR ----------------
-def get_calendar_service(): 
-    creds = Credentials.from_service_account_info(
-    st.secrets["gcp"],
-    scopes=SCOPES)
-    return build("calendar", "v3", credentials=creds)
+def get_oauth_flow():
+    """Creates the OAuth flow object using secrets."""
+    # We construct the config dictionary from st.secrets to avoid needing a local file
+    client_config = {"web": st.secrets["web"]}
+    
+    flow = Flow.from_client_config(
+        client_config,
+        scopes=SCOPES,
+        redirect_uri=st.secrets["web"]["redirect_uris"][0]
+    )
+    return flow
 
-def create_calendar_events(schedule):
-    service = get_calendar_service()
+def authenticate_user():
+    """Handles the UI and logic for logging in."""
+    if "credentials" not in st.session_state:
+        st.session_state.credentials = None
 
+    # Check if we have an auth code in the URL (returning from Google)
+    if st.query_params.get("code"):
+        code = st.query_params.get("code")
+        flow = get_oauth_flow()
+        try:
+            flow.fetch_token(code=code)
+            creds = flow.credentials
+            st.session_state.credentials = creds.to_json()
+            # Clear the query params to hide the code
+            st.query_params.clear()
+            st.rerun()
+        except Exception as e:
+            st.error(f"Authentication failed: {e}")
+
+    # If already logged in, return Credentials object
+    if st.session_state.credentials:
+        creds_dict = json.loads(st.session_state.credentials)
+        creds = Credentials.from_authorized_user_info(creds_dict, SCOPES)
+        return creds
+    
+    return None
+
+def create_calendar_events(schedule, creds):
+    service = build("calendar", "v3", credentials=creds)
+
+    count = 0
     for med in schedule["medicines"]:
         for day in med["days"]:
             for time in med["times"]:
@@ -103,25 +110,16 @@ def create_calendar_events(schedule):
                     },
                     "reminders": {
                         "useDefault": False,
-                        "overrides": [
-                            {"method": "popup", "minutes": 10}
-                        ]
+                        "overrides": [{"method": "popup", "minutes": 10}]
                     }
                 }
-
-                service.events().insert(
-                    calendarId="primary",
-                    body=event
-                ).execute()
-
-# ---------------- SPEECH TO TEXT ----------------
-
+                service.events().insert(calendarId="primary", body=event).execute()
+                count += 1
+    return count
 
 # ---------------- GEMINI CALL ----------------
 def call_gemini(text):
-    response = model.generate_content(
-        SYSTEM_PROMPT + "\n\nUser input:\n" + text
-    )
+    response = model.generate_content(SYSTEM_PROMPT + "\n\nUser input:\n" + text)
     return response.text
 
 def parse_json(raw):
@@ -129,40 +127,45 @@ def parse_json(raw):
         return json.loads(raw)
     except json.JSONDecodeError:
         st.error("Gemini returned invalid JSON")
-        st.text(raw)
         return None
 
 # ---------------- UI ----------------
 st.title("💊 Medicine Reminder Tracker")
 
+# 1. AUTHENTICATION SECTION
+creds = authenticate_user()
+
+if not creds:
+    st.warning("Please log in to allow access to your Google Calendar.")
+    flow = get_oauth_flow()
+    auth_url, _ = flow.authorization_url(prompt='consent')
+    st.markdown(f'<a href="{auth_url}" target="_self" style="padding:10px; background-color:#DB4437; color:white; text-decoration:none; border-radius:5px;">Login with Google</a>', unsafe_allow_html=True)
+    st.stop() # Stop execution here until logged in
+
+st.success("✅ Logged in to Google Calendar")
+
 st.write(
-    "### Enter medicine instructions using **text** or **voice**.\n\n"
-    "**Example:**\n"
-    "I have to take Dolo 650 for three days starting from Monday at 3 PM and 9 PM "
-    "and cough syrup on Tuesday at 11 AM"
+    "### Enter medicine instructions\n"
+    "Example: *Take Dolo 650 for three days starting Monday at 3 PM.*"
 )
-st.markdown("")
 
+user_text = st.text_area("Medicine Instructions", placeholder="Type here...")
 
-user_text = ""
-user_text = st.text_area(
-        "Medicine Instructions",
-        placeholder="Type medicine schedule here..."
-    )
-st.session_state.user_text = user_text
-
-st.markdown("---")
-if st.button("📅 Set Medicine Reminders",key='reminder_set_btn'):
-    if not st.session_state.user_text:
-            st.warning("Please provide medicine instructions")
+if st.button("📅 Set Medicine Reminders"):
+    if not user_text:
+        st.warning("Please provide instructions")
     else:
-        with st.spinner("Processing..."):
-            raw = call_gemini(st.session_state.user_text)
+        with st.spinner("Processing with Gemini..."):
+            raw = call_gemini(user_text)
             schedule = parse_json(raw)
-            st.write(schedule)
-
+            
             if schedule:
-                create_calendar_events(schedule)
-                st.success("✅ All medicine reminders added to Google Calendar!")
-                st.subheader("📋 Extracted Schedule")
+                st.subheader("📋 Plan")
                 st.json(schedule)
+                
+                with st.spinner("Adding to Calendar..."):
+                    try:
+                        count = create_calendar_events(schedule, creds)
+                        st.success(f"✅ Successfully added {count} reminders to your personal calendar!")
+                    except Exception as e:
+                        st.error(f"Calendar Error: {e}")
