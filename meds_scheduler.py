@@ -9,8 +9,7 @@ import os
 # --- CONFIGURATION ---
 st.set_page_config(page_title="Auto Med Scheduler", page_icon="💊")
 
-# This must match the URI you set in Google Cloud Console exactly
-# If running locally, change to http://localhost:8501
+
 REDIRECT_URI = st.secrets["web"]["redirect_uris"][0] 
 
 SCOPES = ['https://www.googleapis.com/auth/calendar.events']
@@ -26,12 +25,10 @@ def get_auth_flow():
 
 def authenticate_user():
     """Handles the login logic"""
-    # 1. Check if we are already authenticated in this session
+
     if "credentials" in st.session_state:
         return st.session_state["credentials"]
 
-    # 2. Check if the user just came back from Google Login (Auth Code in URL)
-    # st.query_params is the new way to handle URL parameters
     code = st.query_params.get("code")
     
     if code:
@@ -87,7 +84,7 @@ def parse_and_schedule(text, service):
                     'description': f'Generated from command: {cmd}',
                     'start': {
                         'dateTime': start_dt.isoformat(),
-                        'timeZone': 'Asia/Kolkata', # Hardcoded for IST as requested
+                        'timeZone': 'Asia/Kolkata', 
                     },
                     'end': {
                         'dateTime': end_dt.isoformat(),
@@ -109,7 +106,7 @@ def parse_and_schedule(text, service):
     return results
 
 # --- UI LOGIC ---
-st.title("💊 Auto-Scheduler (Cloud Version)")
+st.title("💊 Medicines Scheduler")
 
 creds = authenticate_user()
 
