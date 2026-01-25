@@ -4,10 +4,13 @@ from langchain_core.prompts import PromptTemplate
 from langchain_community.vectorstores import FAISS 
 from langchain_huggingface.embeddings import HuggingFaceEmbeddings
 from langchain_groq import ChatGroq
-from config.config import GROQ_API_KEY
 import json
+import os
+from dotenv import load_dotenv
 
-llm = ChatGroq(groq_api_key=GROQ_API_KEY,
+load_dotenv()
+
+llm = ChatGroq(groq_api_key=os.getenv("GROQ_API_KEY"),
                model="openai/gpt-oss-120b",
                temperature=0.5,
                 # \\max_tokens=500,
@@ -128,7 +131,6 @@ qa_chain = ConversationalRetrievalChain.from_llm(
     verbose=True 
 )
 
-# 6. Chat Loop
 
 def ask_ai(query:str):
     user_input = query

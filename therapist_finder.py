@@ -1,9 +1,17 @@
+import os
+import json
 import requests
 import streamlit as st
 import pandas as pd
 import streamlit.components.v1 as components
-import streamlit as st
-from config.config import GOOGLE_API_KEY
+from google import genai
+from google.genai import types
+from dotenv import load_dotenv
+
+
+load_dotenv()
+
+
 DB_FILE = r"Database\user_data.db"
 
 st.markdown("""
@@ -41,27 +49,91 @@ def get_coordinates(address):
         print(f"Geocoding error: {e}")
     return None, None
 
-def find_nearby_therapists(lat, lon, radius_meters=5000):
-    """Finds therapists using Overpass API (OSM Data)."""
-    overpass_url = "https://overpass.nchc.org.tw/api/interpreter"
-    
-    query = f"""
-    [out:json];
-    (
-    node["healthcare"="psychotherapist"](around:{radius_meters},{lat},{lon});
-    node["healthcare"="psychiatrist"](around:{radius_meters},{lat},{lon});
-    node["amenity"="hospital"]["healthcare"~"psychiatric|mental"](around:{radius_meters},{lat},{lon});
-    );
-    out body;
+def find_nearby_therapists(address,lat, lon, radius_meters=5000):
+    client = genai.Client(
+        api_key=os.getenv("GEMINI_API_KEY"),
+    )
 
-    """
-    
-    try:
-        response = requests.get(overpass_url, params={'data': query}).json()
-        return response.get('elements', [])[:10]
-    except Exception as e:
-        print(f"Overpass error: {e}")
-        return []
+    model = "gemini-flash-latest"
+    contents = [
+        types.Content(
+            role="user",
+            parts=[
+                types.Part.from_text(text=f"""
+Input:
+- City: {address}
+- Latitude: {lat}
+- Longitude: {lon}
+- Radius: {radius_meters} meters
+
+"""),
+            ],
+        ),
+    ]
+    generate_content_config = types.GenerateContentConfig(
+        thinking_config=types.ThinkingConfig(
+            thinking_budget=-1,
+        ),
+        system_instruction=[
+            types.Part.from_text(text="""You are a healthcare location extraction assistant.
+
+Your task:
+Find ONLY mental health related healthcare providers within a 5-10 km radius
+around the given latitude and longitude.
+
+
+Include ONLY places related to mental health, such as:
+- Psychiatrist
+- Psychologist
+- Psychotherapist
+- Mental health clinic
+- Psychiatry hospital / department
+
+STRICTLY EXCLUDE:
+- Eye clinics
+- Skin / dermatology clinics
+- Dental clinics
+- ENT clinics
+- General physician clinics (unless explicitly mental health related)
+
+Return ONLY valid JSON in the following format:
+[
+  {
+    \"type\": \"node\",
+    \"id\": number,
+    \"lat\": number,
+    \"lon\": number,
+    \"tags\": {
+      \"amenity\": \"clinic | doctors | hospital\",
+      \"healthcare\": \"psychiatrist | psychologist | psychotherapist | mental_health\",
+      \"name\": \"string\",
+      \"addr:full\": \"string (find address if not available then find landmark or nearby town/city location)\",
+      \"addr:district\": \"string (if available)\",
+      \"addr:state\": \"string (if available)\"
+    }
+  }
+]
+
+Rules:
+- !IMP Find exact Latitude and Longitude of the clinic/hospitals very precisely
+- Do NOT include explanations
+- Do NOT include markdown
+- Do NOT hallucinate non-mental-health facilities
+- If no results are found, return an empty array []
+"""),
+        ],
+    )
+    output_chunk = ""
+    for chunk in client.models.generate_content_stream(
+        model=model,
+        contents=contents,
+        config=generate_content_config,
+    ):
+        if chunk.text:
+            output_chunk += chunk.text
+
+    return output_chunk    
+
 
 
 
@@ -88,8 +160,9 @@ with st.form("search_form"):
         submitted = st.form_submit_button("Search 🔍")
 
 
-lat, lon = get_coordinates(user_residency_location)
-raw_data = find_nearby_therapists(lat, lon)
+latitude_user, longitude_user = get_coordinates(user_residency_location)
+raw_data_str = find_nearby_therapists(address=user_residency_location,lat=latitude_user,lon=longitude_user)
+raw_data = json.loads(raw_data_str)
 print(raw_data)
 results = []
 locations = []
@@ -132,6 +205,7 @@ if results:
 
     for r in results:
         map_link = f"https://www.google.com/maps?q={r['lat']},{r['lng']}"
+        # map_link = f"https://maps.googleapis.com/maps/api/place/textsearch/json?query={}&key={os.getenv('GEMINI_API_KEY')}"
 
         table_data.append({
                 "Clinic Name": r.get("name", "Unnamed"),
@@ -201,7 +275,7 @@ if results:
     </script>
 
     <script async
-    src="https://maps.googleapis.com/maps/api/js?key={GOOGLE_API_KEY}&callback=initMap">
+    src="https://maps.googleapis.com/maps/api/js?key={os.getenv("GEMINI_API_KEY")}&callback=initMap">
     </script>
 
     </body>

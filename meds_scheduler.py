@@ -1,6 +1,5 @@
 import streamlit as st
 import json
-import speech_recognition as sr
 import google.generativeai as genai
 from google_auth_oauthlib.flow import InstalledAppFlow
 from datetime import datetime
@@ -78,7 +77,7 @@ Rules (must follow strictly):
 # ---------------- GOOGLE CALENDAR ----------------
 def get_calendar_service():
     flow = InstalledAppFlow.from_client_secrets_file(
-        "credentials.json", SCOPES
+        r"config\credentials.json", SCOPES
     )
     creds = flow.run_local_server(port=0)
     return build("calendar", "v3", credentials=creds)
@@ -113,21 +112,7 @@ def create_calendar_events(schedule):
                 ).execute()
 
 # ---------------- SPEECH TO TEXT ----------------
-info_box = st.empty()
-def transcribe_voice():
-    r = sr.Recognizer()
-    with sr.Microphone() as source:
-        info_box = st.info("🎙️ Listening...")
-        audio = r.listen(source)
 
-    try:
-        text = r.recognize_google(audio)
-        st.success(f"Recognized: {text}")
-        return text
-    except Exception:
-        st.error("Could not recognize voice")
-        return ""
-info_box.empty()
 
 # ---------------- GEMINI CALL ----------------
 def call_gemini(text):
@@ -161,10 +146,8 @@ user_text = st.text_area(
         "Medicine Instructions",
         placeholder="Type medicine schedule here..."
     )
+st.session_state.user_text = user_text
 
-
-if st.button("🎙️ Record Voice",key='recorder_btn'):
-    st.session_state.user_text = transcribe_voice()
 st.markdown("---")
 if st.button("📅 Set Medicine Reminders",key='reminder_set_btn'):
     if not st.session_state.user_text:

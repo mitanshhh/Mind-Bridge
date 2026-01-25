@@ -2,7 +2,10 @@ import streamlit as st
 import sqlite3
 import time
 from Auth.auth import onboarding_popup
+import os
 
+if "USER_GEMINI_API_KEY" not in st.session_state:
+    st.session_state["USER_GEMINI_API_KEY"] = os.getenv("GEMINI_API_KEY", "")
 
 # ---------- CONFIG ----------
 DB_FILE = r"Database\user_data.db"
@@ -108,3 +111,55 @@ with st.form("settings_form"):
             st.success("Profile updated successfully ✅")
             time.sleep(5)
             st.rerun()
+
+st.markdown("---")
+# ================= API KEY SECTION =================
+st.header("🔑 Gemini API Setup")
+
+st.info("To use the AI features, you need a Google Gemini API Key.")
+
+# Instructions
+with st.expander("📝 **How to get your API Key (Step-by-Step)**", expanded=True):
+    st.markdown("""
+    1. Go to **[Google AI Studio](https://aistudio.google.com/app/apikey)**.
+    2. Log in with your Google Account.
+    3. Click on the blue **"Create API key"** button.
+    4. Select "Create key in new project" (or an existing one).
+    5. **Copy** the generated key string (it starts with `AIza...`).
+    6. Paste it in the box below and click **Save**.
+    """)
+
+
+current_key = st.session_state["USER_GEMINI_API_KEY"]
+masked_key = f"{current_key[:4]}...{current_key[-4:]}" if len(current_key) > 8 else "Not Set"
+
+col1, col2 = st.columns([3, 1])
+with col1:
+    api_key_input = st.text_input(
+        "Enter API Key",
+        value=current_key,
+        type="password",
+        placeholder="AIzaSy...",
+        help="This key is stored only in your current browser session for privacy."
+    )
+
+if st.button("💾 Save API Key", type="primary"):
+    if len(api_key_input) < 30 and len(api_key_input) > 0:
+        st.error("Invalid API Key format. It should be longer.")
+    else:
+
+        st.session_state["USER_GEMINI_API_KEY"] = api_key_input.strip()
+        
+
+        os.environ["GEMINI_API_KEY"] = api_key_input.strip()
+        
+        st.success("✅ API Key applied to this session!")
+        st.rerun()
+
+# Show current status
+if st.session_state["USER_GEMINI_API_KEY"]:
+    st.caption(f"✅ Active Key for this session: `{masked_key}`")
+else:
+    st.caption("❌ No API Key found for this session.")
+
+st.markdown("---")
