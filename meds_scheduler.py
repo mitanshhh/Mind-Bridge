@@ -1,13 +1,14 @@
 import streamlit as st
 import json
 import google.generativeai as genai
-from google_auth_oauthlib.flow import InstalledAppFlow
 from datetime import datetime
 from googleapiclient.discovery import build
 import os 
+from google.oauth2.service_account import Credentials
 from dotenv import load_dotenv
 
 load_dotenv()
+SCOPES = ["https://www.googleapis.com/auth/calendar"]
 
 st.markdown("""
 <style>
@@ -78,11 +79,10 @@ Rules (must follow strictly):
 
 
 # ---------------- GOOGLE CALENDAR ----------------
-def get_calendar_service():
-    flow = InstalledAppFlow.from_client_secrets_file(
-        r"config\credentials.json", SCOPES
-    )
-    creds = flow.run_local_server(port=0)
+def get_calendar_service(): 
+    creds = Credentials.from_service_account_info(
+    st.secrets["gcp"],
+    scopes=SCOPES)
     return build("calendar", "v3", credentials=creds)
 
 def create_calendar_events(schedule):
