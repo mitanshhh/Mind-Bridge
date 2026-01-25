@@ -168,7 +168,7 @@ if submitted:
     api_key = os.getenv("GEMINI_API_KEY")
     
     if not api_key:
-        st.warning("⚠️ No API Key found! Please set the GEMINI API KEY` in your settings to use this feature.")
+        st.warning("⚠️ No API Key found! Please set the `GEMINI API KEY` in your settings to use this feature.")
     
     # 2. Check if user entered a location
     elif not user_residency_location:
