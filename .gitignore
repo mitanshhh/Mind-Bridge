@@ -14,7 +14,7 @@ config/credentials.json
 *.key
 
 # Database
-Database/Mental_Health_DB
+
 *.db
 
 
