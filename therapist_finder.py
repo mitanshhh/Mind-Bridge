@@ -8,9 +8,11 @@ from google import genai
 from google.genai import types
 from dotenv import load_dotenv
 
+# ---------- TITLE & CONFIG ----------
+# Must be the first streamlit command to avoid crashes
+st.set_page_config(page_title="Find Therapists Near You", layout="wide")
 
 load_dotenv()
-
 
 DB_FILE = r"Database\user_data.db"
 
@@ -27,9 +29,9 @@ st.markdown("""
     left: 36px;
 }           
             
-</style<>
+</style>
 
-""",unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
 
 def get_coordinates(address):
@@ -49,9 +51,8 @@ def get_coordinates(address):
         print(f"Geocoding error: {e}")
     return None, None
 
-def find_nearby_therapists(address,lat, lon, radius_meters=5000):
+def find_nearby_therapists(address, lat, lon, radius_meters=5000):
     try:
-
         client = genai.Client(
             api_key=os.getenv("GEMINI_API_KEY"),
         )
@@ -74,7 +75,7 @@ def find_nearby_therapists(address,lat, lon, radius_meters=5000):
         ]
         generate_content_config = types.GenerateContentConfig(
             thinking_config=types.ThinkingConfig(
-                thinking_budget=-1,
+                thinking_budget=1024, # Set a budget to ensure it runs
             ),
             system_instruction=[
                 types.Part.from_text(text="""You are a healthcare location extraction assistant.
@@ -101,17 +102,17 @@ def find_nearby_therapists(address,lat, lon, radius_meters=5000):
     Return ONLY valid JSON in the following format:
     [
     {
-        \"type\": \"node\",
-        \"id\": number,
-        \"lat\": number,
-        \"lon\": number,
-        \"tags\": {
-        \"amenity\": \"clinic | doctors | hospital\",
-        \"healthcare\": \"psychiatrist | psychologist | psychotherapist | mental_health\",
-        \"name\": \"string\",
-        \"addr:full\": \"string (find address if not available then find landmark or nearby town/city location)\",
-        \"addr:district\": \"string (if available)\",
-        \"addr:state\": \"string (if available)\"
+        "type": "node",
+        "id": number,
+        "lat": number,
+        "lon": number,
+        "tags": {
+        "amenity": "clinic | doctors | hospital",
+        "healthcare": "psychiatrist | psychologist | psychotherapist | mental_health",
+        "name": "string",
+        "addr:full": "string (find address if not available then find landmark or nearby town/city location)",
+        "addr:district": "string (if available)",
+        "addr:state": "string (if available)"
         }
     }
     ]
@@ -126,6 +127,8 @@ def find_nearby_therapists(address,lat, lon, radius_meters=5000):
             ],
         )
         output_chunk = ""
+        # Note: thinking models usually don't stream well with standard processing, 
+        # but maintaining your structure:
         for chunk in client.models.generate_content_stream(
             model=model,
             contents=contents,
@@ -136,15 +139,9 @@ def find_nearby_therapists(address,lat, lon, radius_meters=5000):
 
         return output_chunk
     except Exception as e:
-        st.markdown("Set your Google Gemini API key in Settings")
-        print(e)
+        print(f"Gemini Error: {e}")
+        return "[]" # Return empty JSON list on failure
 
-
-
-
-
-# ---------- TITLE ----------
-st.set_page_config(page_title="Find Therapists Near You", layout="wide")
 
 st.markdown(
     "<h1 style='text-align: center;'>Find Therapists Near You</h1>",
@@ -153,8 +150,7 @@ st.markdown(
 
 st.write("")
 
-    # ---------- LOCATION SEARCH ----------
-
+# ---------- LOCATION SEARCH ----------
 
 with st.form("search_form"):
     col1, col2 = st.columns([4, 1])
@@ -166,131 +162,147 @@ with st.form("search_form"):
         submitted = st.form_submit_button("Search 🔍")
 
 
-latitude_user, longitude_user = get_coordinates(user_residency_location)
-raw_data_str = find_nearby_therapists(address=user_residency_location,lat=latitude_user,lon=longitude_user)
-raw_data = json.loads(raw_data_str)
-print(raw_data)
-results = []
-locations = []
-
-for place in raw_data:
-    tags = place.get("tags", {})
-
-    name = tags.get("name", "Unknown Clinic")
-
-    address = (
-        tags.get("addr:full")
-        or tags.get("addr:district")
-        or "Address Not Available"
-    )
-
-
-    lat = place.get("lat")
-    lng = place.get("lon")
-
-    results.append({
-        "name": name,
-        "address": address,
-        "lat": lat,
-        "lng": lng
-    })
-
-    locations.append({
-        "lat":lat,
-        "lng":lng,
-        "label":name,
-    })
-
-
-
-st.write("")
-
-
-if results:
-    table_data = []
-
-    for r in results:
-        map_link = f"https://www.google.com/maps?q={r['lat']},{r['lng']}"
-        # map_link = f"https://maps.googleapis.com/maps/api/place/textsearch/json?query={}&key={os.getenv('GEMINI_API_KEY')}"
-
-        table_data.append({
-                "Clinic Name": r.get("name", "Unnamed"),
-                "Address": r.get("address", "Address not available"),
-                "Google Map Link": map_link
-            })
-
-    df = pd.DataFrame(table_data)
-
-
-    st.subheader("Available Therapists")
-    st.dataframe(
-    df,
-    column_config={
-        "Google Map Link": st.column_config.LinkColumn(
-            "Google Map Link",
-            display_text="View on Map 📍"
-        )
-    },
-    width='stretch'
-    )
-
-        # ---------- LIVE MAP ----------
-    st.subheader("Map View")
-
+# Logic execution
+if submitted:
+    # 1. Check if API Key exists
+    api_key = os.getenv("GEMINI_API_KEY")
     
-    map_html = f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-    <style>
-        #map {{
-        height: 100%;
-        width: 100%;
-        }}
-        html, body {{
-        height: 100%;
-        margin: 0;
-        padding: 0;
-        }}
-    </style>
-    </head>
-    <body>
-    <div id="map"></div>
-
-    <script>
-    function initMap() {{
-    const center = {{ lat: {locations[0]['lat']}, lng: {locations[0]['lng']} }};
-    const map = new google.maps.Map(document.getElementById("map"), {{
-        zoom: 14,
-        center: center
-    }});
-
-    const locations = {locations};
-
-    locations.forEach(loc => {{
-        new google.maps.Marker({{
-        position: {{ lat: loc.lat, lng: loc.lng }},
-        map: map,
-        title: loc.label,
-        icon: "http://maps.google.com/mapfiles/ms/icons/red-dot.png"
-        }});
+    if not api_key:
+        st.warning("⚠️ No API Key found! Please set the GEMINI API KEY` in your settings to use this feature.")
+    
+    # 2. Check if user entered a location
+    elif not user_residency_location:
+        st.warning("Please enter a location to search.")
         
-    }});
-    
-    }}
-    </script>
+    # 3. Proceed if everything is valid
+    else:
+        with st.spinner("Finding therapists nearby..."):
+            latitude_user, longitude_user = get_coordinates(user_residency_location)
+            
+            if latitude_user is None or longitude_user is None:
+                st.error("Could not find coordinates for this location. Please try a different city/area.")
+            else:
+                raw_data_str = find_nearby_therapists(address=user_residency_location, lat=latitude_user, lon=longitude_user)
+                
+                try:
+                    # Clean up the response in case the model adds markdown backticks
+                    cleaned_str = raw_data_str.replace("```json", "").replace("```", "").strip()
+                    raw_data = json.loads(cleaned_str)
+                except json.JSONDecodeError:
+                    raw_data = []
+                    st.error("Error parsing data from AI. Please try again.")
 
-    <script async
-    src="https://maps.googleapis.com/maps/api/js?key={os.getenv("GEMINI_API_KEY")}&callback=initMap">
-    </script>
+                print(raw_data)
+                results = []
+                locations = []
 
-    </body>
-    </html>
-    """
+                for place in raw_data:
+                    tags = place.get("tags", {})
+                    name = tags.get("name", "Unknown Clinic")
+                    address = (
+                        tags.get("addr:full")
+                        or tags.get("addr:district")
+                        or "Address Not Available"
+                    )
 
-    components.html(map_html, height=500)
+                    lat = place.get("lat")
+                    lng = place.get("lon")
 
-    
+                    results.append({
+                        "name": name,
+                        "address": address,
+                        "lat": lat,
+                        "lng": lng
+                    })
+
+                    locations.append({
+                        "lat": lat,
+                        "lng": lng,
+                        "label": name,
+                    })
+
+                st.write("")
+
+                if results:
+                    table_data = []
+
+                    for r in results:
+                        map_link = f"https://www.google.com/maps?q={r['lat']},{r['lng']}"
+                        table_data.append({
+                            "Clinic Name": r.get("name", "Unnamed"),
+                            "Address": r.get("address", "Address not available"),
+                            "Google Map Link": map_link
+                        })
+
+                    df = pd.DataFrame(table_data)
+
+                    st.subheader("Available Therapists")
+                    st.dataframe(
+                        df,
+                        column_config={
+                            "Google Map Link": st.column_config.LinkColumn(
+                                "Google Map Link",
+                                display_text="View on Map 📍"
+                            )
+                        },
+                        width='stretch'
+                    )
+
+                    # ---------- LIVE MAP ----------
+                    st.subheader("Map View")
+
+                    map_html = f"""
+                    <!DOCTYPE html>
+                    <html>
+                    <head>
+                    <style>
+                        #map {{
+                        height: 100%;
+                        width: 100%;
+                        }}
+                        html, body {{
+                        height: 100%;
+                        margin: 0;
+                        padding: 0;
+                        }}
+                    </style>
+                    </head>
+                    <body>
+                    <div id="map"></div>
+
+                    <script>
+                    function initMap() {{
+                        const center = {{ lat: {locations[0]['lat']}, lng: {locations[0]['lng']} }};
+                        const map = new google.maps.Map(document.getElementById("map"), {{
+                            zoom: 14,
+                            center: center
+                        }});
+
+                        const locations = {json.dumps(locations)};
+
+                        locations.forEach(loc => {{
+                            new google.maps.Marker({{
+                                position: {{ lat: loc.lat, lng: loc.lng }},
+                                map: map,
+                                title: loc.label
+                            }});
+                        }});
+                    }}
+                    </script>
+
+                    <script async
+                    src="https://maps.googleapis.com/maps/api/js?key={api_key}&callback=initMap">
+                    </script>
+
+                    </body>
+                    </html>
+                    """
+
+                    components.html(map_html, height=500)
+
+                else:
+                    st.info("No therapists found in this location via AI search. Try broadening the search area.")
 
 else:
-    st.info("Search for a location to see therapists nearby.")
+    # Default state when not submitted
+    st.info("Enter a location above to see therapists nearby.")
