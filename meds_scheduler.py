@@ -4,7 +4,10 @@ import google.generativeai as genai
 from google_auth_oauthlib.flow import InstalledAppFlow
 from datetime import datetime
 from googleapiclient.discovery import build
-from config.config import GOOGLE_API_KEY
+import os 
+from dotenv import load_dotenv
+
+load_dotenv()
 
 st.markdown("""
 <style>
@@ -30,7 +33,7 @@ TIMEZONE = "Asia/Kolkata"
 SCOPES = ["https://www.googleapis.com/auth/calendar"]
 
 # ---------------- GEMINI SETUP ----------------
-genai.configure(api_key=GOOGLE_API_KEY)
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 model = genai.GenerativeModel(
     model_name="gemini-2.5-flash",
