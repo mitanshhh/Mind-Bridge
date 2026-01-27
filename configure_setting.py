@@ -163,3 +163,21 @@ else:
     st.caption("❌ No API Key found for this session.")
 
 st.markdown("---")
+
+with st.expander("About the Developers"):
+    st.write("Want to connect with the people behind this project?")
+
+    developers = [
+        ("Mitansh Jadhav", "Backend, RAG & UI", "https://www.linkedin.com/in/mitanshjadhav/"),
+        ("Safa Sayed", "Backend for Therapist Finder", "https://www.linkedin.com/in/sayed-safa/"),
+        ("Om Koramble", "SOS, Prompt Engineering & APIs", "https://www.linkedin.com/in/om-korade-475279398/"),
+        ("Nupur Ogale", "Backend for Medicine Scheduler", "https://www.linkedin.com/in/nupur-ogale-88aa46395/"),
+    ]
+
+    cols = st.columns(4)
+
+    for col, dev in zip(cols, developers):
+        with col:
+            st.markdown(f"### {dev[0]}")
+            st.caption(dev[1])
+            st.link_button("LinkedIn", dev[2])
