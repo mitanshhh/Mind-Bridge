@@ -28,7 +28,20 @@ st.markdown("""
     top: 28px;
     left: 36px;
 }           
-            
+   
+@media (max-width: 768px) {
+.st-emotion-cache-zh2fnc {
+    width: fit-content;
+    height: auto;
+    max-width: 100%;
+    min-width: 1rem;
+    position: relative;
+    overflow: visible;
+    top: 2px;
+    left: 1px;
+}
+    
+}         
 </style>
 
 """, unsafe_allow_html=True)

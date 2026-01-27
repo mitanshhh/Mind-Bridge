@@ -98,16 +98,6 @@ st.markdown("""
         height: 17px;
     }
     
-    /* SOS and Health Tip Styling */
-    .health-tip {
-        font-style: italic;
-        color: #90ee90;
-        font-size: 14px;
-        display: flex;
-        align-items: center;
-        height: 100%;
-        justify-content: flex-end;
-    }
             
     #your-journey-to-a-healthier-mind-begins-here{
         position: relative;
@@ -129,6 +119,32 @@ st.markdown("""
         left: 146px;
         top: 5px;
     }
+    
+@media (max-width: 768px){
+    .stChatInput {
+    position: fixed;
+    left: -19px;
+    right: 0;
+    width: 110%;
+    padding: 1rem 3rem 1rem 3rem;
+    background-color: #0e1117;
+    z-index: 1000;
+    box-shadow: 0 -4px 6px -1px rgba(0, 0, 0, 0.1);
+    bottom: 25px;
+}
+.st-emotion-cache-8atqhb {
+    width: 33%;
+    position: relative;
+    left: 244px;
+    top: -10px;
+}
+#your-journey-to-a-healthier-mind-begins-here {
+    position: relative;
+    left: 3px;
+    bottom: 124px;
+    font-size: 18px;
+}
+}
 
 </style>
 
