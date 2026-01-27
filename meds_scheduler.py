@@ -55,8 +55,7 @@ def parse_and_schedule(text, service):
     for cmd in commands:
         if not cmd.strip(): continue
         
-        # 1. Parse details
-        # (Simplified regex for demo - works for "Dolo 650 for 5 days at 4PM")
+        # 1. Parse details    
         days_match = re.search(r'(?:for|next)\s+(\d+)\s+days?', cmd, re.IGNORECASE)
         duration = int(days_match.group(1)) if days_match else 1
         
@@ -113,9 +112,10 @@ creds = authenticate_user()
 if not creds:
     st.warning("Please log in to allow this app to access your Calendar.")
     st.info("NOTE: This feature is only available for authenticated test users, to use it make sure to submit a request to the developer")
+    st.markdown("[👉 Request access here](https://docs.google.com/forms/d/e/1FAIpQLSelV6pE08UjBJBoWp_su_bb0NavLZdapYdOxho63HIYVDlqfA/viewform?usp=publish-editor)", unsafe_allow_html=True)
     flow = get_auth_flow()
     auth_url, _ = flow.authorization_url(prompt='consent')
-    
+    st.markdown('---')
     # Show the Login Button
     st.link_button("🔐 Login with Google", auth_url)
 
