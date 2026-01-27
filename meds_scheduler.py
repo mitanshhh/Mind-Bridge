@@ -112,7 +112,10 @@ creds = authenticate_user()
 if not creds:
     st.warning("Please log in to allow this app to access your Calendar.")
     st.info("NOTE: This feature is only available for authenticated test users, to use it make sure to submit a request to the developer")
-    st.markdown("[👉 Request access here](https://docs.google.com/forms/d/e/1FAIpQLSelV6pE08UjBJBoWp_su_bb0NavLZdapYdOxho63HIYVDlqfA/viewform?usp=publish-editor)", unsafe_allow_html=True)
+    st.link_button(
+    "Request Test User Access",
+    "https://docs.google.com/forms/d/e/1FAIpQLSelV6pE08UjBJBoWp_su_bb0NavLZdapYdOxho63HIYVDlqfA/viewform?usp=publish-editor")
+    
     flow = get_auth_flow()
     auth_url, _ = flow.authorization_url(prompt='consent')
     st.markdown('---')
