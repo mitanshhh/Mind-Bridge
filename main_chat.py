@@ -321,7 +321,7 @@ def main():
         )
 
         st.session_state.is_generating = False  # 🟢 unlock UI
-        st.rerun()
+        
 
 
 
