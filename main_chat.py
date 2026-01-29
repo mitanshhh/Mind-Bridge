@@ -311,8 +311,8 @@ def main():
             with st.spinner("Thinking..."):
                 ai_response_message, is_user_text_intent_harmful = ask_ai(user_query)
                 if str(is_user_text_intent_harmful).lower()=="true":
-                    call_emergency()
                     st.markdown(ai_response_message)
+                    call_emergency()
                 else:
                     st.markdown(ai_response_message)
 
@@ -321,7 +321,7 @@ def main():
         )
 
         st.session_state.is_generating = False  # 🟢 unlock UI
-        
+        st.rerun()
 
 
 
